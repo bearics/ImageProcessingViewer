@@ -51,7 +51,6 @@
 #define IDC_EDIT_MAXSIZE                1025
 #define IDC_BUTTON_OPEN1                1026
 #define IDC_EDIT1                       1027
-#define IDC_BUTTON2                     1028
 #define IDC_BUTTON_PSNR                 1028
 #define IDC_BUTTON_OPEN2                1029
 #define IDC_EDIT3                       1030

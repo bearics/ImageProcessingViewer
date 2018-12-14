@@ -24,6 +24,9 @@ PSNRDlg::~PSNRDlg()
 void PSNRDlg::DoDataExchange(CDataExchange* pDX)
 {
 	CDialogEx::DoDataExchange(pDX);
+	DDX_Control(pDX, IDC_EDIT1, Edit_File_Ori);
+	DDX_Control(pDX, IDC_EDIT3, Edit_File_Dst);
+	DDX_Control(pDX, IDC_EDIT4, Edit_PSNR);
 }
 
 
@@ -52,9 +55,16 @@ void PSNRDlg::OnBnClickedButtonOpen1()
 	{
 
 		FILE *fp;
-		fopen_s(&fp, dlg.GetFileName(), "rb");
+		fopen_s(&fp, dlg.GetPathName(), "rb");
+
 		if (RawDlg.DoModal() == IDOK)
 		{
+			if (fp == NULL)
+			{
+				MessageBox("파일경로가 잘못됐어요 프로젝트 폴더 안에 옮겨주세요");
+				return;
+			}
+
 			nHeight_Ori = RawDlg.nHeight;
 			nWidth_Ori = RawDlg.nWidth;
 
@@ -89,14 +99,8 @@ void PSNRDlg::OnBnClickedButtonOpen2()
 
 	if (dlg.DoModal() == IDOK)
 	{
-		if (dlg.GetFileExt() != "raw" && dlg.GetFileExt() != "RAW");
-		{
-			MessageBox("파일 확장자가 raw파일이 아닙니다.");
-			return;
-		}
-
 		FILE *fp;
-		fopen_s(&fp, dlg.GetFileName(), "rb");
+		fopen_s(&fp, dlg.GetPathName(), "rb");
 		if (RawDlg.DoModal() == IDOK)
 		{
 			nHeight_Dst = RawDlg.nHeight;
@@ -145,6 +149,7 @@ void PSNRDlg::OnBnClickedButtonPsnr()
 double PSNRDlg::GetPSNR(unsigned char** Img_in, unsigned char** Out, int nHeight, int nWidth) {
 
 	double mse = 0;
+	double PSNR = 0;
 	for (int h = 0; h < nHeight; h++)
 	{
 		for (int w = 0; w < nWidth; w++)
@@ -152,11 +157,8 @@ double PSNRDlg::GetPSNR(unsigned char** Img_in, unsigned char** Out, int nHeight
 			mse += abs(Img_in[h][w] - Out[h][w])*abs(Img_in[h][w] - Out[h][w]);
 		}
 	}
-	mse /= (nHeight*nWidth);
-
-	double PSNR = 10 * log2((255 * 255) / mse);
-
-	return PSNR;
+	mse /= (double)(nHeight*nWidth);
+	return PSNR = 10 * log10(255.0 * 255.0 / mse);
 }
 
 void PSNRDlg::OnBnClickedCancel()
