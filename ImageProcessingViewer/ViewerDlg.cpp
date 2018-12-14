@@ -72,6 +72,9 @@ BEGIN_MESSAGE_MAP(ViewerDlg, CDialog)
 	ON_COMMAND(ID_EDIT_CONVERT, &ViewerDlg::OnEditConvert)
 	ON_COMMAND(ID_EDIT_SCALING, &ViewerDlg::OnEditScaling)
 	ON_COMMAND(ID_EDIT_ROTATION, &ViewerDlg::OnEditRotation)
+	ON_COMMAND(ID_HISTOGRAM_GETHISTOGRAM, &ViewerDlg::OnHistogramGethistogram)
+	ON_COMMAND(ID_HISTOGRAM_HISTOGRAMEQUALIZATION, &ViewerDlg::OnHistogramHistogramequalization)
+	ON_COMMAND(ID_HISTOGRAM_HISTOGRAMMATCHING, &ViewerDlg::OnHistogramHistogrammatching)
 END_MESSAGE_MAP()
 
 
@@ -762,5 +765,217 @@ void ViewerDlg::OnEditRotation()
 	}
 	else {
 		MessageBox("불러온 영상이 없거나 영상 포맷이 회색조 영상이 아닙니다.");
+	}
+}
+
+void ViewerDlg::OnHistogramGethistogram()
+{
+	if (isImageOpened && nFormat == FORMAT_GRAY)
+	{
+		if (Hist == NULL)
+		{
+			Hist = new int[256];
+		}
+		memset(Hist, 0, sizeof(int) * 256);
+
+		//GetHistogram
+		for (int h = 0; h < nHeight_in; h++)
+		{
+			for (int w = 0; w < nWidth_in; w++)
+			{
+				Hist[ch_in_gray[h][w]]++;
+			}
+		}
+		//Normalization
+		int nMax = 0;
+
+		for (int n = 0; n < 256; n++)
+		{
+			if (nMax < Hist[n])
+			{
+				nMax = Hist[n];
+			}
+		}
+
+		double dNormalizeFactor = 255.0 / nMax;
+
+		Mat HistDisp = Mat(256, 256, CV_8UC1);
+		HistDisp = Scalar::all(0);
+
+		for (int w = 0; w < 256; w++)
+		{
+			int nNormalizedValue = (int)Hist[w] * dNormalizeFactor;
+			for (int h = 255; h > 255 - nNormalizedValue; h--)
+			{
+				HistDisp.at<unsigned char>(h, w) = 255;
+			}
+		}
+		imshow("Histogram of Input Image", HistDisp);
+		waitKey(0);
+	}
+}
+
+
+void ViewerDlg::OnHistogramHistogramequalization()
+{
+	if (isImageOpened && nFormat == FORMAT_GRAY)
+	{
+		if (Hist == NULL)
+		{
+			Hist = new int[256];
+		}
+		memset(Hist, 0, sizeof(int) * 256);
+
+		// Get Histogram
+		for (int h = 0; h < nHeight_in; h++)
+		{
+			for (int w = 0; w < nWidth_in; w++)
+			{
+				Hist[ch_in_gray[h][w]]++;
+			}
+		}
+
+		// Histogram Equalization
+		double Hist_CDF[256] = { 0.0 };
+		Mat Eq_Img = Mat(256, 256, CV_8UC1);
+		int histSum = 0;
+
+		for (int i = 0; i < 256; i++)
+		{
+			histSum = Hist[i] + histSum;
+			Hist_CDF[i] = (double)histSum / (nHeight_in *nWidth_in);
+		}
+		
+		for (int h = 0; h < nHeight_in; h++)
+		{
+			for (int w = 0; w < nWidth_in; w++)
+			{
+				Eq_Img.at<unsigned char>(h, w) = (Hist_CDF[ch_in_gray[h][w]] * 255);
+			}
+		}
+
+		// Display Result
+		int *Hist_Eq = new int[256];
+		memset(Hist_Eq, 0, sizeof(int) * 256);
+
+		for (int h = 0; h < nHeight_in; h++)
+		{
+			for (int w = 0; w < nWidth_in; w++)
+			{
+				Hist_Eq[Eq_Img.at<unsigned char>(h, w)]++;
+			}
+		}
+
+		DisplayImage(Eq_Img, false);
+		DisplayHistogram(Hist);
+		DisplayHistogram(Hist_Eq);
+
+		delete[] Hist_Eq;
+	}
+}
+
+void DisplayHistogram(int *Hist)
+{
+	//Normalization
+	int nMax = 0;
+
+	for (int n = 0; n < 256; n++)
+	{
+		if (nMax < Hist[n])
+		{
+			nMax = Hist[n];
+		}
+	}
+
+	double dNormalizeFactor = 255.0 / nMax;
+
+	Mat HistDisp = Mat(256, 256, CV_8UC1);
+	HistDisp = Scalar::all(0);
+
+	for (int w = 0; w < 256; w++)
+	{
+		int nNormalizedValue = (int)Hist[w] * dNormalizeFactor;
+		for (int h = 255; h > 255 - nNormalizedValue; h--)
+		{
+			HistDisp.at<unsigned char>(h, w) = 255;
+		}
+	}
+
+	imshow("Histogram", HistDisp);
+	waitKey(0);
+}
+
+
+void ViewerDlg::OnHistogramHistogrammatching()
+{
+	if (isImageOpened && nFormat == FORMAT_GRAY)
+	{
+		if (Hist == NULL)
+		{
+			Hist = new int[256];
+		}
+		memset(Hist, 0, sizeof(int) * 256);
+
+		// Get Histogram
+		for (int h = 0; h < nHeight_in; h++)
+		{
+			for (int w = 0; w < nWidth_in; w++)
+			{
+				Hist[ch_in_gray[h][w]]++;
+			}
+		}
+
+		// Histogram Matching
+
+		//선언 & 초기화
+		Mat MatchImg(256, 256, CV_8UC1); Mat RefImg(nHeight_in, nWidth_in, CV_8UC1);
+		int Hist_Ref[256] = { 0 }; int Hist_Mat[256] = { 0 };
+		double Hist_CDF[256], Hist_CDF_Ref[256];
+
+		MatchImg = Scalar::all(0);
+		RefImg = Scalar::all(0);
+
+		// Reference 영상 생성 및 히스토그램 계산
+		srand(GetTickCount());
+		for (int h = 0; h < RefImg.rows; h++)
+		{
+			for (int w = 0; w < RefImg.cols; w++)
+			{
+				RefImg.at<unsigned char>(h, w) = (unsigned char)rand() % 255;
+				Hist_Ref[RefImg.at<unsigned char>(h, w)]++;
+			}
+		}
+
+		// CDF 구하기
+		Hist_CDF[0] = (double)Hist[0] / (nHeight_in * nWidth_in);
+		Hist_CDF_Ref[0] = (double)Hist_Ref[0] / (nHeight_in * nWidth_in);
+		for (int n = 1; n < 256; n++)
+		{
+			Hist_CDF[n] = (double)Hist[n] / (nHeight_in * nWidth_in) + Hist_CDF[n - 1];
+			Hist_CDF_Ref[n] = (double)Hist_Ref[n] / (nHeight_in * nWidth_in) + Hist_CDF_Ref[n - 1];
+		}
+
+		// Histogram Matching 과정을 통하여 Matching 결과를 Mat에 저장
+		for (int h = 0; h < MatchImg.rows; h++)
+		{
+			for (int w = 0; w < MatchImg.cols; w++)
+			{
+				MatchImg.at<unsigned char>(h, w) = (Hist_CDF_Ref[(int)(Hist_CDF[ch_in_gray[h][w]] * 255)] * 255);
+			}
+		}
+
+
+		//Display Result
+		for (int h = 0; h < nHeight_in; h++)
+		{
+			for (int w = 0; w < nWidth_in; w++)
+			{
+				Hist_Mat[MatchImg.at<unsigned char>(h, w)]++;
+			}
+		}
+
+		DisplayImage(MatchImg, false);
+		DisplayHistogram(Hist_Ref);
+		DisplayHistogram(Hist_Mat);
 	}
 }

@@ -29,13 +29,16 @@
 #define ID_EDIT_CONVERT                 32774
 #define ID_EDIT_SCALING                 32775
 #define ID_EDIT_ROTATION                32776
+#define ID_HISTOGRAM_GETHISTOGRAM       32777
+#define ID_HISTOGRAM_HISTOGRAMEQUALIZATION 32778
+#define ID_HISTOGRAM_HISTOGRAMMATCHING  32779
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        140
-#define _APS_NEXT_COMMAND_VALUE         32777
+#define _APS_NEXT_COMMAND_VALUE         32780
 #define _APS_NEXT_CONTROL_VALUE         1009
 #define _APS_NEXT_SYMED_VALUE           108
 #endif
