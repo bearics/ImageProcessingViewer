@@ -192,8 +192,15 @@
     </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="AddNoise.h" />
+    <ClInclude Include="AddNoise_Tab1.h" />
+    <ClInclude Include="AddNoise_Tab2.h" />
     <ClInclude Include="CRawInfoDlg.h" />
+    <ClInclude Include="FilterDlg.h" />
     <ClInclude Include="ImageProcessingViewer.h" />
+    <ClInclude Include="MeanFilterDlg.h" />
+    <ClInclude Include="OrderStatisticFilterDlg.h" />
+    <ClInclude Include="PSNRDlg.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="RotationDlg.h" />
     <ClInclude Include="SCALEDIALOG.h" />
@@ -202,8 +209,15 @@
     <ClInclude Include="ViewerDlg.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="AddNoise.cpp" />
+    <ClCompile Include="AddNoise_Tab1.cpp" />
+    <ClCompile Include="AddNoise_Tab2.cpp" />
     <ClCompile Include="CRawInfoDlg.cpp" />
+    <ClCompile Include="FilterDlg.cpp" />
     <ClCompile Include="ImageProcessingViewer.cpp" />
+    <ClCompile Include="MeanFilterDlg.cpp" />
+    <ClCompile Include="OrderStatisticFilterDlg.cpp" />
+    <ClCompile Include="PSNRDlg.cpp" />
     <ClCompile Include="RotationDlg.cpp" />
     <ClCompile Include="SCALEDIALOG.cpp" />
     <ClCompile Include="stdafx.cpp">

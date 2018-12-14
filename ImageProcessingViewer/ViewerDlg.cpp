@@ -75,6 +75,11 @@ BEGIN_MESSAGE_MAP(ViewerDlg, CDialog)
 	ON_COMMAND(ID_HISTOGRAM_GETHISTOGRAM, &ViewerDlg::OnHistogramGethistogram)
 	ON_COMMAND(ID_HISTOGRAM_HISTOGRAMEQUALIZATION, &ViewerDlg::OnHistogramHistogramequalization)
 	ON_COMMAND(ID_HISTOGRAM_HISTOGRAMMATCHING, &ViewerDlg::OnHistogramHistogrammatching)
+	ON_COMMAND(ID_EDIT_FILTER, &ViewerDlg::OnEditFilter)
+	ON_COMMAND(ID_NOISEREDUCTION_ADDNOISE, &ViewerDlg::OnNoisereductionAddnoise)
+	ON_COMMAND(ID_NOISEFILTERING_MEANFILTER, &ViewerDlg::OnNoisefilteringMeanfilter)
+	ON_COMMAND(ID_NOISEFILTERING_ORDER, &ViewerDlg::OnNoisefilteringOrder)
+	ON_COMMAND(ID_NOISEREDUCTION_GETPSNR, &ViewerDlg::OnNoisereductionGetpsnr)
 END_MESSAGE_MAP()
 
 
@@ -326,6 +331,8 @@ void ViewerDlg::OnFileOpen()
 			MessageBox("JPG 또는 YUV, Gray 파일이 아닙니다.");
 			return;
 		}
+
+		InpFileName = dlg.GetFileTitle();
 
 		if (dlg.GetFileExt() == "jpg" || dlg.GetFileExt() == "JPG")
 		{
@@ -978,4 +985,774 @@ void ViewerDlg::OnHistogramHistogrammatching()
 		DisplayHistogram(Hist_Ref);
 		DisplayHistogram(Hist_Mat);
 	}
+}
+
+unsigned char** ViewerDlg::Padding(unsigned char** In, int nHeight, int nWidth, int nFilterSize)
+{
+	int nPadSize = (int)(nFilterSize / 2);
+	unsigned char** Pad = MemAlloc2D(nHeight + 2 * nPadSize, nWidth + 2 * nPadSize, 0);
+
+	for (int h = 0; h < nHeight; h++)
+	{
+		for (int w = 0; w < nWidth; w++)
+		{
+			Pad[h + nPadSize][w + nPadSize] = In[h][w];
+		}
+	}
+
+	for (int h = 0; h < nPadSize; h++)
+	{
+		for (int w = 0; w < nWidth; w++)
+		{
+			Pad[h][w + nPadSize] = In[0][w];
+			Pad[h + (nHeight - 1)][w + nPadSize] = In[nHeight - 1][w];
+		}
+	}
+
+	for (int h = 0; h < nHeight; h++)
+	{
+		for (int w = 0; w < nPadSize; w++)
+		{
+			Pad[h + nPadSize][w] = In[h][0];
+			Pad[h + nPadSize][w + (nWidth - 1)] = In[h][nWidth - 1];
+		}
+	}
+
+	for (int h = 0; h < nPadSize; h++)
+	{
+		for (int w = 0; w < nPadSize; w++)
+		{
+			Pad[h][w] = In[0][0];
+			Pad[h + (nHeight - 1)][w] = In[nHeight - 1][0];
+			Pad[h][w + (nWidth - 1)] = In[0][nWidth - 1];
+			Pad[h + (nHeight - 1)][w + (nWidth - 1)] = In[nHeight - 1][nWidth - 1];
+		}
+	}
+
+	return Pad;
+}
+
+void ViewerDlg::OnEditFilter()
+{
+	if (isImageOpened && nFormat == FORMAT_GRAY)
+	{
+		FilterDlg filterDlg;
+		unsigned char** Pad, **Out;
+
+		if (filterDlg.DoModal() == IDOK)
+		{
+			int nFilterType = filterDlg.nFilterType;
+			int nFilterSize = filterDlg.nFilterSize;
+			switch (nFilterType)
+			{
+			case FILTER_AVERAGE:
+				if (nFilterSize >= 3)
+				{
+					if (nFilterSize % 2 == 0)
+					{
+						nFilterSize++;
+					}
+					Pad = Padding(ch_in_gray, nHeight_in, nWidth_in, nFilterSize);
+					Out = MemAlloc2D(nHeight_in, nWidth_in, 0);
+
+					AverageFilter(Pad, Out, nHeight_in, nWidth_in, nFilterSize);
+
+					MemFree2D(Pad, nHeight_in + (int)(nFilterSize / 2) * 2);
+					MemFree2D(Out, nHeight_in);
+				}
+				else MessageBox("FilterSize가 잘못되었습니다. FilterSize는 3 이상의 정수 값을 가져야 합니다.");
+				break;
+
+			case FILTER_SMOOTH:
+				Pad = Padding(ch_in_gray, nHeight_in, nWidth_in, 3);
+				Out = MemAlloc2D(nHeight_in, nWidth_in, 0);
+
+				SmoothFilter(Pad, Out, nHeight_in, nWidth_in);
+
+				MemFree2D(Pad, nHeight_in + 2);
+				MemFree2D(Out, nHeight_in);
+				break;
+			case FILTER_SHARPEN:
+				Pad = Padding(ch_in_gray, nHeight_in, nWidth_in, 3);
+				Out = MemAlloc2D(nHeight_in, nWidth_in, 0);
+
+				SharpenFilter(Pad, Out, nHeight_in, nWidth_in);
+
+				MemFree2D(Pad, nHeight_in + 2);
+				MemFree2D(Out, nHeight_in);
+				break;
+			case FILTER_GAUSSIAN:
+				Pad = Padding(ch_in_gray, nHeight_in, nWidth_in, 3);
+				Out = MemAlloc2D(nHeight_in, nWidth_in, 0);
+
+				GaussianFilter(Pad, Out, nHeight_in, nWidth_in);
+
+				MemFree2D(Pad, nHeight_in + 2);
+				MemFree2D(Out, nHeight_in);
+				break;
+			}
+		}
+	}
+	else
+	{
+		MessageBox("불러온 영상이 없거나 영상 포맷이 회색조 영상이 아닙니다.");
+	}
+
+}
+
+void ViewerDlg::AverageFilter(unsigned char** In_Pad, unsigned char** Out, int nHeight, int nWidth, int nFilterSize)
+{
+	int PadSize = (int)(nFilterSize / 2);
+	int filter = PadSize * 2 + 1;
+	double sum = 0;
+	Mat imgResult(nHeight, nWidth, CV_8UC1);
+
+	unsigned char** Mask = MemAlloc2D(filter, filter, (double)1 / filter * filter);
+
+	for (int h = 0; h < nHeight; h++)
+	{
+		for (int w = 0; w < nWidth; w++)
+		{
+			sum = 0;
+			for (int i = 0; i < filter; i++)
+				for (int j = 0; j < filter; j++)
+					sum += In_Pad[h + i][w + j] * (1.0 / (double)(filter*filter));
+
+			Out[h][w] = (int)sum;
+		}
+	}
+
+	for (int h = 0; h < imgResult.rows; h++)
+	{
+		for (int w = 0; w < imgResult.cols; w++)
+		{
+			imgResult.at<unsigned char>(h, w) = Out[h][w];
+		}
+	}
+	DisplayImage(imgResult, false);
+
+	MemFree2D(Mask, filter);
+}
+
+void ViewerDlg::SmoothFilter(unsigned char** In_Pad, unsigned char** Out, int nHeight, int nWidth)
+{
+	int PadSize = 1;
+	int filterSize = PadSize * 2 + 1;
+
+	double filter[3][3] = {
+		{ 1, 2, 1 },
+		{ 2 , 4 , 2 },
+		{ 1, 2 , 1}
+	};
+
+	Mat imgResult(nHeight, nWidth, CV_8UC1);
+	
+	double sum = 0;
+
+	for (int h = 0; h < nHeight; h++)
+	{
+		for (int w = 0; w < nWidth; w++)
+		{
+			sum = 0;
+
+			for (int i = 0; i < filterSize; i++)
+				for (int j = 0; j < filterSize; j++)
+					sum += In_Pad[h + i][w + j] * ((double)filter[i][j] / 16);
+
+			Out[h][w] = (int)sum;
+		}
+	}
+
+	for (int h = 0; h < imgResult.rows; h++)
+	{
+		for (int w = 0; w < imgResult.cols; w++)
+		{
+			imgResult.at<unsigned char>(h, w) = Out[h][w];
+		}
+	}
+	DisplayImage(imgResult, false);
+}
+
+void ViewerDlg::SharpenFilter(unsigned char** In_Pad, unsigned char** Out, int nHeight, int nWidth)
+{
+	int PadSize = 1;
+	int filterSize = PadSize * 2 + 1;
+	double filter[3][3] = {
+			{0,-1,0},
+			{-1,5,-1},
+			{0,-1,0}
+	};
+
+	Mat imgResult(nHeight, nWidth, CV_8UC1);
+	
+	double sum = 0;
+
+	for (int h = 0; h < nHeight; h++)
+	{
+		for (int w = 0; w < nWidth; w++)
+		{
+			sum = 0;
+			for (int i = 0; i < filterSize; i++)
+				for (int j = 0; j < filterSize; j++)
+					sum += In_Pad[h + i][w + j] * ((double)filter[i ][j]);
+
+			if (sum <= 0)sum = 0;
+			if (sum >= 255)sum = 255;
+
+			Out[h][w] = (unsigned char)sum;
+		}
+	}
+
+	for (int h = 0; h < imgResult.rows; h++)
+	{
+		for (int w = 0; w < imgResult.cols; w++)
+		{
+			imgResult.at<unsigned char>(h, w) = Out[h][w];
+		}
+	}
+	DisplayImage(imgResult, false);
+}
+
+void ViewerDlg::GaussianFilter(unsigned char** In_Pad, unsigned char** Out, int nHeight, int nWidth)
+{
+	int PadSize = 1;
+	double gaussian[3][3];
+	double result = 0;
+
+	double stdv = 1;
+	double r, s = 2.0 * stdv * stdv;
+	double sum = 0.0;
+
+	Mat imgResult(nHeight, nWidth, CV_8UC1);
+
+
+	for (int x = -1; x <= 1; x++)
+	{
+		for (int y = -1; y <= 1; y++)
+		{
+			r = (x*x + y * y);
+			gaussian[x + 1][y + 1] = (exp(-(r) / s)) / sqrt(3.14 * s);
+			sum += gaussian[x + 1][y + 1];
+		}
+	}
+
+	for (int i = 0; i < 3; ++i) // Loop to normalize the kernel
+		for (int j = 0; j < 3; ++j)
+			gaussian[i][j] /= sum;
+
+	for (int h = 0; h < nHeight; h++)
+	{
+		for (int w = 0; w < nWidth; w++)
+		{
+			result = 0;
+			for (int i = 0; i < PadSize*2 +1; i++)
+				for (int j = 0; j < PadSize * 2 + 1; j++)
+				{
+					result += In_Pad[h + i][w + j] * gaussian[i][j];
+				}
+
+			Out[h][w] = result;
+		}
+	}
+
+	for (int h = 0; h < imgResult.rows; h++)
+	{
+		for (int w = 0; w < imgResult.cols; w++)
+		{
+			imgResult.at<unsigned char>(h, w) = Out[h][w];
+		}
+	}
+	DisplayImage(imgResult, false);
+
+}
+
+void ViewerDlg::OnNoisereductionAddnoise()
+{
+	AddNoise AddNoiseDlg;
+	BYTE** NoiseImg = MemAlloc2D(nHeight_in, nWidth_in, 0);
+	if (isImageOpened && nFormat == FORMAT_GRAY)
+	{
+
+		if (AddNoiseDlg.DoModal() == IDOK)
+		{
+			CString OutFileName = InpFileName;
+			float Value_1 = AddNoiseDlg.value_1;
+			float Value_2 = AddNoiseDlg.value_2;
+			int nNoiseType = AddNoiseDlg.NoiseType;
+
+			if (nNoiseType == 0)
+			{
+				if (Value_2 < 1)
+				{
+					MessageBox("표준편차 값이 잘못되었습니다. 표준편차 값은 1 이상이여야 합니다.");
+					MemFree2D(NoiseImg, nHeight_in);
+					return;
+				}
+				InputGaussianNoise(ch_in_gray, NoiseImg, nHeight_in, nWidth_in, Value_1, Value_2);
+				OutFileName += "_GN.raw";
+
+			}
+			else
+			{
+				if (Value_1 <= 0 && Value_2 <= 0)
+				{
+					MessageBox("두 개의 확률 값 중 적어도 하나는 0보다 커야 합니다.");
+					MemFree2D(NoiseImg, nHeight_in);
+					return;
+				}
+				InputSaltPepperNoise(ch_in_gray, NoiseImg, nHeight_in, nWidth_in, Value_1, Value_2);
+				OutFileName += "_SPN.raw";
+
+			}
+
+			FILE* fp;
+
+			fopen_s(&fp, OutFileName, "wb");
+			for (int h = 0; h < nHeight_in; h++)
+			{
+				fwrite(NoiseImg[h], sizeof(unsigned char), nWidth_in, fp);
+			}
+
+			fclose(fp);
+			MemFree2D(NoiseImg, nHeight_in);
+		}
+	}
+}
+
+void InputGaussianNoise(unsigned char** In, unsigned char** Out, int nHeight, int nWidth, float fMean, float fStdev)
+{
+	float fTemp = 0, fPDF[256] = { 0.0f };
+
+	GetGaussianPDF(fPDF, 256, fMean, fStdev);
+
+	srand(GetTickCount());
+
+	for (int h = 0; h < nHeight; h++)
+	{
+		for (int w = 0; w < nWidth; w++)
+		{
+			fTemp = (float)In[h][w] + GetNoise(fPDF, 256);
+			Out[h][w] = static_cast<unsigned char>(fTemp);
+		}
+	}
+}
+
+void GetGaussianPDF(float* EmptyPDF, int nLength, float fMean, float fStDev)
+{
+	int n;
+	int Center = nLength / 2;
+	float x;
+	double PI = 3.141592;
+
+	for (n = 0; n < nLength; n++)
+	{
+		x = (float)(n - Center);
+		EmptyPDF[n] = (1 / ((float)sqrt(2 * PI) * fStDev)) * exp(-pow(x - fMean, 2) / (2 * fStDev * fStDev));
+	}
+}
+
+float GetNoise(float* PDF, int nLength)
+{
+	int n;
+	int Center = nLength / 2;
+	float fRand, fComp, fTemp = 0;
+	float x = 0, fDiff;
+	float* CDF = new float[nLength];
+
+	CDF[0] = 0;
+
+	fRand = (float)rand() / (RAND_MAX + 1); // 0~1 Uniform Distribution
+
+	for (n = 1; n < nLength; n++)
+	{
+		CDF[n] = (PDF[n] + PDF[n - 1]) / 2 + CDF[n - 1];
+		fDiff = fRand - CDF[n];
+		if (fDiff < 0)
+		{
+			x = ((float)n - Center);
+			break;
+		}
+	}
+	fComp = (fRand - CDF[n - 1]) / (CDF[n] - CDF[n - 1]);
+
+	delete[] CDF;
+
+	return x + fComp;
+}
+
+void InputSaltPepperNoise(unsigned char** In, unsigned char** Out, int nHeight, int nWidth, float fSProb, float fPProb)
+{
+	float Low = fSProb;
+	float High = 1.0f - fPProb;
+	float fRand;
+
+	srand(GetTickCount());
+
+	for (int h = 0; h < nHeight; h++)
+	{
+		for (int w = 0; w < nWidth; w++)
+		{
+			fRand = ((float)rand() / RAND_MAX);
+
+			if (fRand < Low)
+			{
+				Out[h][w] = 255;
+			}
+			else if (fRand > High)
+			{
+				Out[h][w] = 0;
+			}
+			else Out[h][w] = In[h][w];
+		}
+	}
+}
+
+Mat GrayToMat(unsigned char** Img, int nHeight, int nWidth)
+{
+	Mat rtn = Mat(nHeight, nWidth, CV_8UC1);
+
+	for (int h = 0; h < nHeight; h++)
+	{
+		for (int w = 0; w < nWidth; w++)
+		{
+			rtn.at<unsigned char>(h, w) = Img[h][w];
+		}
+	}
+
+	return rtn;
+}
+
+void ViewerDlg::OnNoisefilteringMeanfilter()
+{
+	MeanFilterDlg MFDlg;
+
+	if (isImageOpened == true && nFormat == FORMAT_GRAY)
+	{
+		if (MFDlg.DoModal() == IDOK)
+		{
+			int nFilterSize = MFDlg.nFilterSize;
+			int nFilterType = MFDlg.nMeanFilterType;
+
+			if (nFilterSize < 3)
+			{
+				MessageBox("필터 크기가 잘못되었습니다.");
+				return;
+			}
+
+			if (nFilterSize % 2 == 0)
+			{
+				nFilterSize++;
+			}
+
+			CString OutFileName = InpFileName;
+			unsigned char** Out = MemAlloc2D(nHeight_in, nWidth_in, 0);
+
+
+			switch (nFilterType)
+			{
+			case NF_ARITHMETIC:
+				ArithmeticMeanFilter(ch_in_gray, Out, nHeight_in, nWidth_in, nFilterSize);
+				OutFileName += "_AMF.raw";
+				break;
+
+			case NF_GEOMETRIC:
+				GeometricMeanFilter(ch_in_gray, Out, nHeight_in, nWidth_in, nFilterSize);
+				OutFileName += "_GMF.raw";
+				break;
+
+			case NF_HARMONIC:
+				HarmonicMeanFilter(ch_in_gray, Out, nHeight_in, nWidth_in, nFilterSize);
+				OutFileName += "HMF.raw";
+				break;
+
+			case NF_CONTRAHARMONIC:
+				int Q = MFDlg.Q;
+				ContraharmonicMeanFilter(ch_in_gray, Out, nHeight_in, nWidth_in, nFilterSize, Q);
+				OutFileName += "_CHMF.raw";
+				break;
+			}
+
+			DisplayImage(GrayToMat(Out, nHeight_in, nWidth_in), false);
+
+			FILE *fp;
+
+			fopen_s(&fp, OutFileName, "wb");
+
+			for (int h = 0; h < nHeight_in; h++)
+			{
+				fwrite(Out[h], sizeof(unsigned char), nWidth_in, fp);
+			}
+
+			fclose(fp);
+		}
+	}
+}
+
+void ViewerDlg::ArithmeticMeanFilter(unsigned char** Img_in, unsigned char** Out, int nHeight, int nWidth, int nFilterSize)
+{
+	int nPadSize = (int)(nFilterSize / 2);
+	unsigned char** In_Pad = Padding(Img_in, nHeight, nWidth, nFilterSize);
+	double nTemp;
+
+	for (int h = 0; h < nHeight; h++)
+	{
+		for (int w = 0; w < nWidth; w++)
+		{
+			nTemp = 0;
+			for (int y = 0; y < nFilterSize; y++)
+			{
+				for (int x = 0; x < nFilterSize; x++)
+				{
+					nTemp += In_Pad[h + y][w + x];
+				}
+			}
+
+			Out[h][w] = static_cast<unsigned char>(nTemp / (nFilterSize*nFilterSize));
+
+		}
+	}
+	MemFree2D(In_Pad, nHeight + 2 * nPadSize);
+}
+
+void ViewerDlg::GeometricMeanFilter(unsigned char** Img_in, unsigned char** Out, int nHeight, int nWidth, int nFilterSize)
+{
+	int nPadSize = (int)(nFilterSize / 2);
+	unsigned char** In_Pad = Padding(Img_in, nHeight, nWidth, nFilterSize);
+	double Temp;
+	double result;
+
+	for (int h = 0; h < nHeight; h++)
+	{
+		for (int w = 0; w < nWidth; w++)
+		{
+			Temp = 1;
+			for (int y = 0; y < nFilterSize; y++)
+			{
+				for (int x = 0; x < nFilterSize; x++)
+				{
+					Temp *= In_Pad[h + y][w + x];
+				}
+			}
+
+			result = pow(Temp, (double)1 / (nFilterSize*nFilterSize));
+			Out[h][w] = static_cast<unsigned char>(result);
+		}
+	}
+	MemFree2D(In_Pad, nHeight + 2 * nPadSize);
+}
+
+
+void ViewerDlg::HarmonicMeanFilter(unsigned char** Img_in, unsigned char** Out, int nHeight, int nWidth, int nFilterSize)
+{
+	int nPadSize = (int)(nFilterSize / 2);
+	unsigned char** In_Pad = Padding(Img_in, nHeight, nWidth, nFilterSize);
+	double Temp;
+
+
+	for (int h = 0; h < nHeight; h++)
+	{
+		for (int w = 0; w < nWidth; w++)
+		{
+			Temp = 0;
+			for (int y = 0; y < nFilterSize; y++)
+			{
+				for (int x = 0; x < nFilterSize; x++)
+				{
+					Temp += ((double)1 / In_Pad[h + y][w + x]);
+				}
+			}
+
+			Temp = (double)(nFilterSize*nFilterSize) / Temp;
+			Out[h][w] = static_cast<unsigned char>(Temp);
+		}
+	}
+	MemFree2D(In_Pad, nHeight + 2 * nPadSize);
+}
+
+void ViewerDlg::ContraharmonicMeanFilter(unsigned char** Img_in, unsigned char** Out, int nHeight, int nWidth, int nFilterSize, int Q)
+{
+	int nPadSize = (int)(nFilterSize / 2);
+	unsigned char** In_Pad = Padding(Img_in, nHeight, nWidth, nFilterSize);
+
+	double up = 0;
+	double down = 0;
+
+	for (int h = 0; h < nHeight; h++)
+	{
+		for (int w = 0; w < nWidth; w++)
+		{
+			up = 0;
+			down = 0;
+			for (int y = 0; y < nFilterSize; y++)
+			{
+				for (int x = 0; x < nFilterSize; x++)
+				{
+					up += pow(In_Pad[h + y][w + x], Q + 1);
+					down += pow(In_Pad[h + y][w + x], Q);
+				}
+			}
+			Out[h][w] = static_cast<unsigned char>(up / down);
+		}
+	}
+	MemFree2D(In_Pad, nHeight + 2 * nPadSize);
+}
+
+
+void ViewerDlg::MedianFilter(unsigned char **Img_in, unsigned char **Out, int nHeight, int nWidth, int nFilterSize)
+{
+	int nPadSize = (int)(nFilterSize / 2);
+	int med = (int)(nFilterSize*nFilterSize / 2);
+	unsigned char** In_Pad = Padding(Img_in, nHeight, nWidth, nFilterSize);
+	unsigned char* sortMatrix = new unsigned char[nFilterSize*nFilterSize];
+
+	for (int h = 0; h < nHeight; h++)
+	{
+		for (int w = 0; w < nWidth; w++)
+		{
+			int sort_num = 0;
+			for (int n = 0; n < nFilterSize; n++)
+			{
+				for (int m = 0; m < nFilterSize; m++)
+				{
+					sortMatrix[sort_num] = In_Pad[h + n][w + m];
+					sort_num++;
+				}
+			}
+
+			sort(sortMatrix, sortMatrix + nFilterSize * nFilterSize);
+			Out[h][w] = sortMatrix[med];
+		}
+	}
+	delete[] sortMatrix;
+	MemFree2D(In_Pad, nHeight + 2 * nPadSize);
+}
+
+void ViewerDlg::AdaptiveMedianFilter(unsigned char **Img_in, unsigned char **Out, int nHeight, int nWidth, int nFilterSize, int nFilterSize_Max)
+{
+	int nPadSize = (int)(nFilterSize / 2);
+	unsigned char** In_Pad = Padding(Img_in, nHeight, nWidth, nFilterSize);
+	unsigned char* sortMatrix = new unsigned char[nFilterSize_Max*nFilterSize_Max];
+
+	int nFilter_Sizeup;
+	int A1, A2, Zxy, Zmed, B1, B2, Result;
+
+	for (int h = 0; h < nHeight; h++)
+	{
+		for (int w = 0; w < nWidth; w++)
+		{
+			A1 = 0, A2 = 0, Zmed = 0, B1 = 0, B2 = 0, Result = 0;
+			nFilter_Sizeup = nFilterSize;
+
+			Zxy = In_Pad[h + 1][w + 1];
+			// Level A
+			while (nFilter_Sizeup <= nFilterSize_Max)
+			{
+				// mask sortMatrix
+				int sort_num = 0;
+				memset(sortMatrix, 0, nFilterSize_Max*nFilterSize_Max);
+				for (int n = 0; n < nFilter_Sizeup; n++)
+					for (int m = 0; m < nFilter_Sizeup; m++)
+					{
+						// Out of Range
+						if (h + n <= nHeight + 2 - 1 && h + m <= nWidth + 2 - 1)
+						{
+							sortMatrix[sort_num] = In_Pad[h + n][w + m];
+							sort_num++;
+						}
+					}
+				sort(sortMatrix, sortMatrix + sort_num);
+				Zmed = sortMatrix[(sort_num) / 2];
+
+				A1 = Zmed - sortMatrix[0];
+				A2 = Zmed - sortMatrix[nFilter_Sizeup*nFilter_Sizeup - 1];
+
+				// Level A → Level B
+				if (A1 > 0 && A2 < 0)
+					break;
+				// Level A Repeat
+				else
+					nFilter_Sizeup += 2;
+			}
+
+			// Level B
+			B1 = Zxy - sortMatrix[0];
+			B2 = Zxy - sortMatrix[nFilter_Sizeup*nFilter_Sizeup - 1];
+			if (B1 > 0 && B2 < 0)
+			{
+				Result = Zxy;
+			}
+			else
+			{
+				Result = Zmed;
+			}
+
+			Out[h][w] = (unsigned char)Result;
+		}
+	}
+	delete[] sortMatrix;
+	MemFree2D(In_Pad, nHeight + 2 * nPadSize);
+}
+
+
+void ViewerDlg::OnNoisefilteringOrder()
+{
+	OrderStatisticFilterDlg OSFDlg;
+
+	if (isImageOpened == true && nFormat == FORMAT_GRAY)
+	{
+		if (OSFDlg.DoModal() == IDOK)
+		{
+			int nFilterSize = OSFDlg.nFilterSize1;
+			int MaxFilterSize = OSFDlg.nFilterSize2;
+			int nFilterType = OSFDlg.nOSFType;
+
+			if (nFilterSize < 3)
+			{
+				MessageBox("필터 크기가 잘못되었습니다.");
+				return;
+			}
+
+			if (nFilterSize % 2 == 0)
+			{
+				nFilterSize++;
+			}
+
+			CString OutFileName = InpFileName;
+			unsigned char** Out = MemAlloc2D(nHeight_in, nWidth_in, 0);
+
+			switch (nFilterType)
+			{
+			case NF_MEDIAN:
+				ViewerDlg::MedianFilter(ch_in_gray, Out, nHeight_in, nWidth_in, nFilterSize);
+				OutFileName += "_MEDF.raw";
+				break;
+
+			case NF_ADAPTIVEMEDIAN:
+				int MaxFilterSize = OSFDlg.nFilterSize2;
+				AdaptiveMedianFilter(ch_in_gray, Out, nHeight_in, nWidth_in, nFilterSize, MaxFilterSize);
+				OutFileName += "_AMEDF.raw";
+				break;
+			}
+
+			DisplayImage(GrayToMat(Out, nHeight_in, nWidth_in), false);
+
+			FILE* fp;
+
+			fopen_s(&fp, OutFileName, "wb");
+
+			for (int h = 0; h < nHeight_in; h++)
+			{
+				fwrite(Out[h], sizeof(unsigned char), nWidth_in, fp);
+			}
+
+			fclose(fp);
+		}
+	}
+}
+
+
+void ViewerDlg::OnNoisereductionGetpsnr()
+{
+	PSNRDlg PSNRDlg;
+	PSNRDlg.DoModal();
 }
